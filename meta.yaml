@@ -1,0 +1,6 @@
+name: StoryChief
+version: '1.0'
+description: 'Integrates Statamic with StoryChief'
+url: 'https://storychief.io'
+developer: StoryChief
+developer_url: 'https://storychief.io'
