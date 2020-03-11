@@ -17,10 +17,6 @@ class StoryChief
 
     public function isAuth()
     {
-        if (request('key') === $this->getConfig('key') && $this->getConfig('key') !== null) {
-            return true;
-        } else {
-            return false;
-        }
+        return hash_hmac('sha256', json_encode(request()->except('meta')), $this->getConfig('key')) === request('meta.mac');
     }
 }

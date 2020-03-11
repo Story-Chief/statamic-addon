@@ -10,7 +10,6 @@ use Statamic\API\Collection;
 use Statamic\Extend\Controller;
 use Statamic\API\AssetContainer;
 use Statamic\Addons\StoryChief\StoryChief;
-use Illuminate\Support\Collection as CollectionSupport;
 use Statamic\API\User;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 
@@ -26,12 +25,21 @@ class StoryChiefController extends Controller
         $this->sc->checkAuth();
     }
 
-    public function getCheck()
+    /**
+     * Connection check
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function postCheck()
     {
         return response()->json('true');
     }
 
-
+    /**
+     * Return all collections
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
     public function getCollections()
     {
         $collections = [];
@@ -45,7 +53,11 @@ class StoryChiefController extends Controller
         return response()->json(Collection::all());
     }
 
-    
+    /**
+     * Return a particular collection
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
     public function getCollection()
     {
         $handle = request('handle');
@@ -83,6 +95,11 @@ class StoryChiefController extends Controller
         );
     }
     
+    /**
+     * Update an entry
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
     public function putEntry()
     {
         $body = Arr::get(request()->all(), 'fields');
@@ -117,6 +134,11 @@ class StoryChiefController extends Controller
     }
 
 
+    /**
+     * Delete an entry
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
     public function deleteEntry()
     {
         $id = request('id');
@@ -144,7 +166,14 @@ class StoryChiefController extends Controller
         return $tryslug;
     }
 
-    protected function prepareBody($body, $collection)
+    /**
+     * Prepare the data for creting or editing an entry
+     *
+     * @param array $body
+     * @param String $collection
+     * @return array
+     */
+    protected function prepareBody(array $body, String $collection) : array
     {
         $fields = Arr::get(Collection::whereHandle($collection)->fieldset()->toArray(), 'sections');
 
@@ -177,8 +206,14 @@ class StoryChiefController extends Controller
         return $body;
     }
 
-
-    protected function createAsset($uri, $containerId)
+    /**
+     * Create an asset
+     *
+     * @param String $uri
+     * @param String $containerId
+     * @return string
+     */
+    protected function createAsset(String $uri, String $containerId) : string
     {
         $container = AssetContainer::find($containerId);
         $asset = Asset::create('img/sc/./')->container($container)->get();
@@ -197,7 +232,13 @@ class StoryChiefController extends Controller
         return $asset->uri();
     }
 
-    protected function getUser($value)
+    /**
+     * Fetches or creates a user
+     *
+     * @param String $value
+     * @return \Statamic\Contracts\Data\Users\User
+     */
+    protected function getUser(String $value)
     {
         if (filter_var($value, FILTER_VALIDATE_EMAIL)) {
             $user = User::whereEmail($value);
