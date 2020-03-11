@@ -11,6 +11,7 @@ use Statamic\Extend\Controller;
 use Statamic\API\AssetContainer;
 use Statamic\Addons\StoryChief\StoryChief;
 use Illuminate\Support\Collection as CollectionSupport;
+use Statamic\API\User;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 
 class StoryChiefController extends Controller
@@ -18,7 +19,7 @@ class StoryChiefController extends Controller
     private $sc;
 
 
-    public function __construct(StoryChief $storyChief, Fetch $fetch)
+    public function __construct(StoryChief $storyChief)
     {
         parent::__construct();
         $this->sc = $storyChief;
@@ -51,6 +52,11 @@ class StoryChiefController extends Controller
         return response()->json(Collection::whereHandle($handle)->fieldset());
     }
 
+    /**
+     * Create a new Entry
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
     public function postEntry()
     {
         $body = Arr::get(request()->all(), 'fields') ;
@@ -143,7 +149,6 @@ class StoryChiefController extends Controller
         $fields = Arr::get(Collection::whereHandle($collection)->fieldset()->toArray(), 'sections');
 
         $collapsed = [];
-
         
         foreach ($fields as $key => $value) {
             if (is_array($value)) {
@@ -158,8 +163,12 @@ class StoryChiefController extends Controller
             switch ($field['type']) {
                 case 'assets':
                     $body[$key] = $this->createAsset($value, $field['container']);
-
                     break;
+                                    
+                case 'users':
+                    $body[$key] = $this->getUser($value)->id();
+                    break;
+
                 default:
                     break;
             }
@@ -186,5 +195,42 @@ class StoryChiefController extends Controller
         Storage::delete($file_name);
 
         return $asset->uri();
+    }
+
+    protected function getUser($value)
+    {
+        if (filter_var($value, FILTER_VALIDATE_EMAIL)) {
+            $user = User::whereEmail($value);
+            if ($user) {
+                return $user;
+            }
+        } else {
+            $user = User::whereUsername($value);
+            if ($user) {
+                return $user;
+            }
+        }
+
+        // If there's no user, create one
+        if (filter_var($value, FILTER_VALIDATE_EMAIL)) {
+            $email = $value;
+            $first_name = strstr($value, '@', true);
+            $username = strstr($value, '@', true);
+        } else {
+            $email = "$value@$value.com";
+            $first_name = $value;
+            $username = $value;
+        }
+        $user = User::create()
+            ->username($username)
+            ->email($email)
+            ->with([
+                'fist_name' => $first_name
+            ])
+            ->get();
+
+        $user->save();
+
+        return $user;
     }
 }
