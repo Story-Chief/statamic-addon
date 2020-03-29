@@ -30,53 +30,42 @@ class StoryChiefController extends Controller
      *
      * @return \Illuminate\Http\JsonResponse
      */
-    public function postCheck()
+    public function postWebhook()
     {
-        return response()->json('true');
-    }
+        $event = request('meta.event');
 
-    /**
-     * Return all collections
-     *
-     * @return \Illuminate\Http\JsonResponse
-     */
-    public function getCollections()
-    {
-        $collections = [];
-        foreach (Collection::all() as $collection) {
-            array_push($collections, [
-                'slug' => $collection->id(),
-                'fieldset' => $collection->fieldset()->toArray()
-            ]);
+        switch ($event) {
+            case 'test':
+                return response()->json('true');
+                break;
+            case 'publish':
+                return response()->json($this->publishEntry());
+                break;
+            case 'update':
+                return response()->json($this->updateEntry());
+                break;
+            case 'delete':
+                return response()->json($this->deleteEntry());
+                break;
+            default:
+                return response()->json('true');
+                break;
+            break;
         }
-
-        return response()->json(Collection::all());
     }
 
-    /**
-     * Return a particular collection
-     *
-     * @return \Illuminate\Http\JsonResponse
-     */
-    public function getCollection()
-    {
-        $handle = request('handle');
-        return response()->json(Collection::whereHandle($handle)->fieldset());
-    }
 
     /**
      * Create a new Entry
      *
      * @return \Illuminate\Http\JsonResponse
      */
-    public function postEntry()
+    public function publishEntry()
     {
-        $body = Arr::get(request()->all(), 'fields') ;
-        $collection = Arr::get($body, 'collection');
-        
-        $slug = $this->generateSlug(Arr::get($body, 'slug', bin2hex(random_bytes(8))), $collection);
-        $body['slug'] = $slug;
-
+        $body = Arr::get(request()->all(), 'data') ;
+        $collection = $this->getConfig('collection')[0];
+        $slug = $this->generateSlug(Arr::get($body, 'seo_slug', bin2hex(random_bytes(8))), $collection);
+        $body['seo_slug'] = $slug;
         $body = $this->prepareBody($body, $collection);
 
         $entry = Entry::create($slug)
@@ -86,13 +75,10 @@ class StoryChiefController extends Controller
             ->get();
 
         $entry->save();
-
-        return response()->json(
-            [
+        return[
                 'id' => $entry->id(),
-                'url' => $entry->absoluteUrl(),
-            ]
-        );
+                'permalink' => $entry->absoluteUrl(),
+            ];
     }
     
     /**
@@ -100,20 +86,20 @@ class StoryChiefController extends Controller
      *
      * @return \Illuminate\Http\JsonResponse
      */
-    public function putEntry()
+    public function updateEntry()
     {
-        $body = Arr::get(request()->all(), 'fields');
-        $id = Arr::get(request()->all(), 'id');
-        $collection = Arr::get($body, 'collection');
+        $body = Arr::get(request()->all(), 'data');
+        $id = Arr::get(request()->all(), 'data.external_id');
+        $collection = $this->getConfig('collection')[0];
 
         if (!Entry::exists($id)) {
             return response()->json('Entry not found', 401);
         }
 
         $entry = Entry::find($id);
-        if ($entry->get('slug') !== $body['slug']) {
+        if ($entry->get('slug') !== $body['seo_slug']) {
             $slug = $this->generateSlug(Arr::get($body, 'slug', bin2hex(random_bytes(8))), $collection);
-            $body['slug'] = $slug;
+            $body['seo_slug'] = $slug;
         }
 
         
@@ -125,12 +111,12 @@ class StoryChiefController extends Controller
 
         $entry->save();
 
-        return response()->json(
+        return
             [
                 'id' => $entry->id(),
-                'url' => $entry->absoluteUrl(),
+                'permalink' => $entry->absoluteUrl(),
             ]
-        );
+        ;
     }
 
 
@@ -141,7 +127,7 @@ class StoryChiefController extends Controller
      */
     public function deleteEntry()
     {
-        $id = request('id');
+        $id = Arr::get(request()->all(), 'data.external_id');
         if (!Entry::exists($id)) {
             return response()->json('Entry not found', 401);
         }
@@ -157,7 +143,7 @@ class StoryChiefController extends Controller
     protected function generateSlug($slug, $collection)
     {
         $i = 1;
-        $tryslug = $slug;
+        $tryslug = $this->getConfig('seo_slug') ? $this->getConfig('seo_slug') : $slug;
         while (Entry::whereSlug($tryslug, $collection) !== null) {
             $tryslug = $slug.$i;
             $i++;
@@ -173,19 +159,67 @@ class StoryChiefController extends Controller
      * @param String $collection
      * @return array
      */
-    protected function prepareBody(array $body, String $collection) : array
+    protected function prepareBody(array $sc_data, String $collection) : array
     {
-        $fields = Arr::get(Collection::whereHandle($collection)->fieldset()->toArray(), 'sections');
-
-        $collapsed = [];
+        $collection_fields = Arr::get(Collection::whereHandle($collection)->fieldset()->toArray(), 'sections');
         
-        foreach ($fields as $key => $value) {
+        $custom_fields = $this->getConfig('custom_fields');
+        $fields_map = Arr::except($this->getConfig(), ['key', 'collection', 'custom_fields']);
+        $collapsed_collection_fields = [];
+        $body = [];
+        
+        foreach ($collection_fields as $key => $value) {
             if (is_array($value)) {
-                array_push($collapsed, ...$value['fields']);
+                array_push($collapsed_collection_fields, ...$value['fields']);
             }
         }
+
+        // Map the data from SC
+        foreach ($fields_map as $sc_field => $st_field) {
+            $value = null;
+            switch ($sc_field) {
+                case 'author_email':
+                    $value = $sc_data['author']['data']['email'];
+                    break;
+                case 'author_fullname':
+                    $value = $sc_data['author']['data']['first_name'] . ' ' . $sc_data['author']['data']['last_name'];
+                    break;
+                case 'featured_image':
+                    $value = $sc_data['featured_image']['data']['url'];
+                    break;
+                case 'tags':
+                    $value = [];
+                    foreach ($sc_data['tags']['data'] as $key => $val) {
+                        array_push($value, $val['name']);
+                    }
+                    break;
+                case 'categories':
+                    $value = [];
+                    foreach ($sc_data['categories']['data'] as $key => $val) {
+                        array_push($value, $val['name']);
+                    }
+                    break;
+                
+                default:
+                    $value = $sc_data[$sc_field];
+                    break;
+            }
+
+
+            $body[$st_field] =  $value;
+        }
+
+        // Map custom fields
+        foreach ($custom_fields as $field) {
+            $data = Arr::first($sc_data['custom_fields'], function ($value, $key) use ($field) {
+                return $key['key'] == $field['sc_field'];
+            });
+            $body[$field['st_field']] =  $data['value'];
+        }
+
+
         foreach ($body as $key => $value) {
-            $field = Arr::first($collapsed, function ($k, $v) use ($key) {
+            $field = Arr::first($collapsed_collection_fields, function ($k, $v) use ($key) {
                 return $v['name'] === $key;
             });
 
