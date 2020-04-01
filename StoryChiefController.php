@@ -64,7 +64,7 @@ class StoryChiefController extends Controller
     {
         $body = Arr::get(request()->all(), 'data') ;
         $collection = $this->getConfig('collection')[0];
-        $slug = $this->generateSlug(Arr::get($body, 'seo_slug', bin2hex(random_bytes(8))), $collection);
+        $slug = $this->generateSlug($body, $collection);
         $body['seo_slug'] = $slug;
         $body = $this->prepareBody($body, $collection);
 
@@ -140,10 +140,10 @@ class StoryChiefController extends Controller
     }
 
 
-    protected function generateSlug($slug, $collection)
+    protected function generateSlug($body, $collection)
     {
         $i = 1;
-        $tryslug = $this->getConfig('seo_slug') ? $this->getConfig('seo_slug') : $slug;
+        $tryslug = $body['seo_slug'] ? $body['seo_slug'] : str_slug($body['title'], '-');
         while (Entry::whereSlug($tryslug, $collection) !== null) {
             $tryslug = $slug.$i;
             $i++;

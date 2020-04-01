@@ -1,52 +1,48 @@
 fields:
   key:
     type: text
-  fields:
+  collections:
     type: section
-    display: Fields
+    display: Collection
   collection:
     type: collections
     display: Collection
+  fields:
+    type: section
+    display: Fields    
   title:
     type: text
-    width: 50
     display: Story Title
   content:
     type: text
-    width: 50
     display: Story Content    
   excerpt:
     type: text
-    width: 50
     display: Story Excerpt  
   featured_image:
     type: text
-    width: 50
     display: Featured Image
   seo_title:
     type: text
-    width: 50
     display: Story SEO title
   seo_description:
     type: text
-    width: 50
     display: Story SEO description
   tags:
     type: text
-    width: 50
     display: Tags    
   categories:
     type: text
-    width: 50
     display: Categories    
   author_email:
     type: text
-    width: 50
     display: Author email     
   author_fullname:
     type: text
-    width: 50
     display: Author full name
+  language:
+    type: text
+    display: Language
   custom_fields:
       type: grid
       fields:
