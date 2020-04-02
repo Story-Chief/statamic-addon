@@ -2,55 +2,47 @@
 
 namespace Statamic\Addons\StoryChief;
 
-use Statamic\API\Arr;
-use Statamic\API\Asset;
-use Statamic\API\Entry;
-use Statamic\API\Storage;
-use Statamic\API\Collection;
 use Statamic\Extend\Controller;
-use Statamic\API\AssetContainer;
-use Statamic\Addons\StoryChief\StoryChief;
-use Statamic\API\User;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Str;
+use Illuminate\Support\Arr;
+use Statamic\Contracts\Data\Entries\Entry;
+use Statamic\Contracts\Data\Users\User;
+use Statamic\Exceptions\UuidExistsException;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
+use Statamic\API\Entry as EntryService;
+use Statamic\API\Asset as AssetService;
+use Statamic\API\Storage as StorageService;
+use Statamic\API\Collection as CollectionService;
+use Statamic\API\AssetContainer as AssetContainerService;
+use Statamic\API\User as UserService;
 
 class StoryChiefController extends Controller
 {
-    private $sc;
-
-
-    public function __construct(StoryChief $storyChief)
-    {
-        parent::__construct();
-        $this->sc = $storyChief;
-        $this->sc->checkAuth();
-    }
-
     /**
      * Connection check
      *
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
+     * @throws UuidExistsException
+     * @noinspection PhpUnused
      */
     public function postWebhook()
     {
-        $event = request('meta.event');
+        $payload = request()->all();
+        $data = Arr::get($payload, 'data');
+        $event = Arr::get($payload, 'meta.event');
+
+        $this->validatePayload($payload);
 
         switch ($event) {
-            case 'test':
-                return response()->json('true');
-                break;
             case 'publish':
-                return response()->json($this->publishEntry());
-                break;
+                return $this->publishEntry($data);
             case 'update':
-                return response()->json($this->updateEntry());
-                break;
+                return $this->updateEntry($data);
             case 'delete':
-                return response()->json($this->deleteEntry());
-                break;
+                return $this->deleteEntry($data);
             default:
-                return response()->json('true');
-                break;
-            break;
+                return response()->json('ok');
         }
     }
 
@@ -58,52 +50,45 @@ class StoryChiefController extends Controller
     /**
      * Create a new Entry
      *
-     * @return \Illuminate\Http\JsonResponse
+     * @param array $data
+     * @return JsonResponse
+     * @throws UuidExistsException
      */
-    public function publishEntry()
+    protected function publishEntry($data)
     {
-        $body = Arr::get(request()->all(), 'data') ;
         $collection = $this->getConfig('collection')[0];
-        $slug = $this->generateSlug($body, $collection);
-        $body['seo_slug'] = $slug;
-        $body = $this->prepareBody($body, $collection);
+        $slug = $this->generateSlug($data, $collection);
+        $body = $this->prepareBody($data, $collection);
 
-        $entry = Entry::create($slug)
+        /** @var Entry $entry */
+        $entry = EntryService::create($slug)
             ->collection($collection)
             ->with($body)
             ->date()
-            ->get();
+            ->save();
 
-        $entry->save();
-        return[
-                'id' => $entry->id(),
-                'permalink' => $entry->absoluteUrl(),
-            ];
+        return response()->json([
+            'id'        => $entry->id(),
+            'permalink' => $entry->absoluteUrl(),
+        ]);
     }
-    
+
     /**
      * Update an entry
      *
-     * @return \Illuminate\Http\JsonResponse
+     * @param array $data
+     * @return JsonResponse
+     * @throws UuidExistsException
      */
-    public function updateEntry()
+    protected function updateEntry($data)
     {
-        $body = Arr::get(request()->all(), 'data');
-        $id = Arr::get(request()->all(), 'data.external_id');
+        $id = Arr::get($data, 'external_id');
         $collection = $this->getConfig('collection')[0];
+        $body = $this->prepareBody($data, $collection);
 
-        if (!Entry::exists($id)) {
-            return response()->json('Entry not found', 401);
+        if (!$entry = EntryService::find($id)) {
+            return response()->json('Entry not found', 404);
         }
-
-        $entry = Entry::find($id);
-        if ($entry->get('slug') !== $body['seo_slug']) {
-            $slug = $this->generateSlug(Arr::get($body, 'slug', bin2hex(random_bytes(8))), $collection);
-            $body['seo_slug'] = $slug;
-        }
-
-        
-        $body = $this->prepareBody($body, $collection);
 
         foreach ($body as $key => $value) {
             $entry->set($key, $value);
@@ -111,63 +96,68 @@ class StoryChiefController extends Controller
 
         $entry->save();
 
-        return
-            [
-                'id' => $entry->id(),
-                'permalink' => $entry->absoluteUrl(),
-            ]
-        ;
+        return response()->json([
+            'id'        => $entry->id(),
+            'permalink' => $entry->absoluteUrl(),
+        ]);
     }
 
 
     /**
      * Delete an entry
      *
-     * @return \Illuminate\Http\JsonResponse
+     * @param $data
+     * @return JsonResponse
      */
-    public function deleteEntry()
+    protected function deleteEntry($data)
     {
-        $id = Arr::get(request()->all(), 'data.external_id');
-        if (!Entry::exists($id)) {
+        $id = Arr::get($data, 'external_id');
+
+        if (!$entry = EntryService::find($id)) {
             return response()->json('Entry not found', 401);
         }
 
-        $entry = Entry::find($id);
         $entry->delete();
-
 
         return response()->json('Entry deleted');
     }
 
 
+    /**
+     * @param array $body
+     * @param string $collection
+     * @return string
+     */
     protected function generateSlug($body, $collection)
     {
+        $slug = $slug_attempt = Arr::get($body, 'seo_slug', Str::slug($body['title'], '-'));
+
         $i = 1;
-        $tryslug = $body['seo_slug'] ? $body['seo_slug'] : str_slug($body['title'], '-');
-        while (Entry::whereSlug($tryslug, $collection) !== null) {
-            $tryslug = $slug.$i;
+        while (EntryService::whereSlug($slug, $collection) !== null) {
+            $slug = $slug_attempt . '-' . $i;
             $i++;
         }
 
-        return $tryslug;
+        return $slug;
     }
 
     /**
-     * Prepare the data for creting or editing an entry
+     * Prepare the data for creating or editing an entry
      *
-     * @param array $body
-     * @param String $collection
+     * @param array $sc_data
+     * @param string $collection
      * @return array
+     * @noinspection PhpUnusedParameterInspection
      */
-    protected function prepareBody(array $sc_data, String $collection) : array
+    protected function prepareBody($sc_data, $collection)
     {
-        $collection_fields = Arr::get(Collection::whereHandle($collection)->fieldset()->toArray(), 'sections');
-        
-        $custom_fields = $this->getConfig('custom_fields');
+        $collection_fields = Arr::get(CollectionService::whereHandle($collection)->fieldset()->toArray(), 'sections');
+
+        $custom_fields = $this->getConfig('custom_fields', []);
         $fields_map = Arr::except($this->getConfig(), ['key', 'collection', 'custom_fields']);
         $collapsed_collection_fields = [];
         $body = [];
-        
+
         foreach ($collection_fields as $key => $value) {
             if (is_array($value)) {
                 array_push($collapsed_collection_fields, ...$value['fields']);
@@ -199,14 +189,14 @@ class StoryChiefController extends Controller
                         array_push($value, $val['name']);
                     }
                     break;
-                
+
                 default:
                     $value = $sc_data[$sc_field];
                     break;
             }
 
 
-            $body[$st_field] =  $value;
+            $body[$st_field] = $value;
         }
 
         // Map custom fields
@@ -214,7 +204,7 @@ class StoryChiefController extends Controller
             $data = Arr::first($sc_data['custom_fields'], function ($value, $key) use ($field) {
                 return $key['key'] == $field['sc_field'];
             });
-            $body[$field['st_field']] =  $data['value'];
+            $body[$field['st_field']] = $data['value'];
         }
 
 
@@ -227,7 +217,7 @@ class StoryChiefController extends Controller
                 case 'assets':
                     $body[$key] = $this->createAsset($value, $field['container']);
                     break;
-                                    
+
                 case 'users':
                     $body[$key] = $this->getUser($value)->id();
                     break;
@@ -243,25 +233,23 @@ class StoryChiefController extends Controller
     /**
      * Create an asset
      *
-     * @param String $uri
-     * @param String $containerId
+     * @param string $uri
+     * @param string $containerId
      * @return string
      */
-    protected function createAsset(String $uri, String $containerId) : string
+    protected function createAsset($uri, $containerId)
     {
-        $container = AssetContainer::find($containerId);
-        $asset = Asset::create('img/sc/./')->container($container)->get();
+        $container = AssetContainerService::find($containerId);
+        $asset = AssetService::create('img/sc/./')->container($container)->get();
         $image = file_get_contents($uri);
         $file_name = basename($uri);
-        Storage::put($file_name, $image);
 
-        $file = new UploadedFile("site/storage/$file_name", $file_name);
+        StorageService::put($file_name, $image);
 
-
-        $asset->upload($file);
+        $asset->upload(new UploadedFile("site/storage/$file_name", $file_name));
         $asset->save();
 
-        Storage::delete($file_name);
+        StorageService::delete($file_name);
 
         return $asset->uri();
     }
@@ -269,43 +257,31 @@ class StoryChiefController extends Controller
     /**
      * Fetches or creates a user
      *
-     * @param String $value
-     * @return \Statamic\Contracts\Data\Users\User
+     * @param string $value
+     * @return User|null
      */
-    protected function getUser(String $value)
+    protected function getUser($value)
     {
         if (filter_var($value, FILTER_VALIDATE_EMAIL)) {
-            $user = User::whereEmail($value);
-            if ($user) {
-                return $user;
-            }
+            $user = UserService::whereEmail($value);
         } else {
-            $user = User::whereUsername($value);
-            if ($user) {
-                return $user;
-            }
+            $user = UserService::whereUsername($value);
         }
-
-        // If there's no user, create one
-        if (filter_var($value, FILTER_VALIDATE_EMAIL)) {
-            $email = $value;
-            $first_name = strstr($value, '@', true);
-            $username = strstr($value, '@', true);
-        } else {
-            $email = "$value@$value.com";
-            $first_name = $value;
-            $username = $value;
-        }
-        $user = User::create()
-            ->username($username)
-            ->email($email)
-            ->with([
-                'fist_name' => $first_name
-            ])
-            ->get();
-
-        $user->save();
 
         return $user;
+    }
+
+    /**
+     * @param array $payload
+     * @noinspection PhpComposerExtensionStubsInspection
+     */
+    protected function validatePayload($payload)
+    {
+        $given_mac = Arr::pull($payload, 'meta.mac');
+        $calc_mac = hash_hmac('sha256', json_encode($payload), $this->getConfig('key'));
+
+        if (!hash_equals($given_mac, $calc_mac)) {
+            abort(401);
+        }
     }
 }

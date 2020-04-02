@@ -1,58 +1,47 @@
 fields:
   key:
     type: text
-  collections:
-    type: section
-    display: Collection
+    validate: required
   collection:
     type: collections
-    display: Collection
-  fields:
+    validate: required|max:1
+  fields_section:
     type: section
-    display: Fields    
   title:
     type: text
-    display: Story Title
+    validate: required
   content:
     type: text
-    display: Story Content    
+    validate: required
   excerpt:
     type: text
-    display: Story Excerpt  
   featured_image:
     type: text
-    display: Featured Image
   seo_title:
     type: text
-    display: Story SEO title
   seo_description:
     type: text
-    display: Story SEO description
   tags:
     type: text
-    display: Tags    
   categories:
     type: text
-    display: Categories    
   author_email:
     type: text
-    display: Author email     
   author_fullname:
     type: text
-    display: Author full name
   language:
     type: text
-    display: Language
+  custom_fields_section:
+      type: section
   custom_fields:
       type: grid
       fields:
         sc_field:
             type: text
-            display: Storychie Custom field code        
+            display: Storychief Custom field code
         st_field:
             type: text
             display: Statamic field slug
-        
 
 
 
@@ -60,4 +49,4 @@ fields:
 
 
 
-  
+
