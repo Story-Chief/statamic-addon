@@ -34,15 +34,25 @@ class StoryChiefController extends Controller
 
         $this->validatePayload($payload);
 
-        switch ($event) {
-            case 'publish':
-                return $this->publishEntry($data);
-            case 'update':
-                return $this->updateEntry($data);
-            case 'delete':
-                return $this->deleteEntry($data);
-            default:
-                return response()->json('ok');
+        try {
+            switch ($event) {
+                case 'publish':
+                    return $this->publishEntry($data);
+                case 'update':
+                    return $this->updateEntry($data);
+                case 'delete':
+                    return $this->deleteEntry($data);
+                default:
+                    return response()->json('ok');
+            }
+        } catch (\Exception $e) {
+            \Log::error($e);
+            return response()->json([
+                'errors'    => 'Sorry, something went wrong.',
+                'exception' => get_class($e),
+                'message'   => $e->getMessage(),
+                'trace'     => $e->getTrace()
+            ], 500);
         }
     }
 
