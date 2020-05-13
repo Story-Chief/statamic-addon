@@ -140,7 +140,12 @@ class StoryChiefController extends Controller
      */
     protected function generateSlug($body, $collection)
     {
-        $slug = $slug_attempt = Arr::get($body, 'seo_slug', Str::slug($body['title'], '-'));
+        $slug_attempt = Arr::get($body, 'seo_slug');
+        if(empty($slug_attempt)){
+            $slug_attempt = Str::slug($body['title'], '-');
+        }
+
+        $slug = $slug_attempt;
 
         $i = 1;
         while (EntryService::whereSlug($slug, $collection) !== null) {
