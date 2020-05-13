@@ -206,7 +206,16 @@ class StoryChiefController extends Controller
             }
 
 
-            $body[$st_field] = $value;
+            $st_fields_arr = explode('.', $st_field);
+            if (count($st_fields_arr) === 1) {
+                $body[$st_fields_arr[0]] = $value;
+            } elseif (count($st_fields_arr) === 2) {
+                // dealing with a bard type
+                $body[$st_fields_arr[0]][] = [
+                    'type' => $st_fields_arr[1],
+                    'html' => $value
+                ];
+            }
         }
 
         // Map custom fields
@@ -220,6 +229,9 @@ class StoryChiefController extends Controller
 
         foreach ($body as $key => $value) {
             $field = Arr::first($collapsed_collection_fields, function ($k, $v) use ($key) {
+                if(!isset($v['name'])){
+                    return false;
+                }
                 return $v['name'] === $key;
             });
 
